@@ -1,0 +1,423 @@
+
+--[[
+    YUEN FPS Utility Hub v2.0
+    Client-side utility script
+    Features:
+      - Rayfield UI
+      - Adjustable WalkSpeed and JumpPower
+      - Camera FOV control
+      - Save and return to a waypoint
+      - Restore movement defaults
+      - Character and player diagnostics
+
+    Note: Client-side changes may be overridden by the game server.
+]]
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local Workspace = game:GetService("Workspace")
+
+local LocalPlayer = Players.LocalPlayer
+
+if not LocalPlayer then
+    warn("[YUEN] LocalPlayer was not found.")
+    return
+end
+
+-- Load the UI library
+local success, Rayfield = pcall(function()
+    return loadstring(
+        game:HttpGet("https://sirius.menu/rayfield")
+    )()
+end)
+
+if not success or not Rayfield then
+    warn("[YUEN] Failed to load Rayfield:", Rayfield)
+    return
+end
+
+-- State
+local walkEnabled = false
+local jumpEnabled = false
+local savedWaypoint = nil
+
+local desiredWalkSpeed = 16
+local desiredJumpPower = 50
+local desiredFOV = 70
+
+local originalWalkSpeed = 16
+local originalJumpPower = 50
+local originalUseJumpPower = true
+
+local currentHumanoid = nil
+local characterConnection = nil
+
+-- Notifications
+local function Notify(title, content)
+    pcall(function()
+        Rayfield:Notify({
+            Title = title,
+            Content = content,
+            Duration = 3
+        })
+    end)
+end
+
+-- Character helpers
+local function GetCharacter()
+    return LocalPlayer.Character
+end
+
+local function GetRoot(character)
+    character = character or GetCharacter()
+    if not character then
+        return nil
+    end
+
+    return character:FindFirstChild("HumanoidRootPart")
+        or character:FindFirstChild("Torso")
+        or character:FindFirstChild("UpperTorso")
+end
+
+local function GetHumanoid(character)
+    character = character or GetCharacter()
+    if not character then
+        return nil
+    end
+
+    return character:FindFirstChildOfClass("Humanoid")
+end
+
+local function ApplyMovementSettings()
+    local humanoid = GetHumanoid()
+
+    if not humanoid then
+        return
+    end
+
+    if walkEnabled then
+        humanoid.WalkSpeed = desiredWalkSpeed
+    end
+
+    if jumpEnabled then
+        humanoid.UseJumpPower = true
+        humanoid.JumpPower = desiredJumpPower
+    end
+end
+
+local function CaptureCharacterDefaults(character)
+    local humanoid = character:WaitForChild("Humanoid", 10)
+
+    if not humanoid then
+        warn("[YUEN] Humanoid was not found after respawn.")
+        return
+    end
+
+    currentHumanoid = humanoid
+
+    originalWalkSpeed = humanoid.WalkSpeed
+    originalJumpPower = humanoid.JumpPower
+    originalUseJumpPower = humanoid.UseJumpPower
+
+    task.wait(0.2)
+    ApplyMovementSettings()
+
+    print("[YUEN] Character ready:", character.Name)
+end
+
+-- Keep settings working after respawn
+if characterConnection then
+    characterConnection:Disconnect()
+end
+
+characterConnection = LocalPlayer.CharacterAdded:Connect(
+    CaptureCharacterDefaults
+)
+
+if LocalPlayer.Character then
+    task.spawn(CaptureCharacterDefaults, LocalPlayer.Character)
+end
+
+-- Create interface
+local Window = Rayfield:CreateWindow({
+    Name = "YUEN | FPS Utility Hub",
+    LoadingTitle = "YUEN Utility Hub",
+    LoadingSubtitle = "Version 2.0",
+    ConfigurationSaving = {
+        Enabled = false
+    },
+    KeySystem = false
+})
+
+-- Tabs
+local MovementTab = Window:CreateTab("Movement", 4483362458)
+local CameraTab = Window:CreateTab("Camera", 4483362458)
+local WaypointTab = Window:CreateTab("Waypoints", 4483362458)
+local DiagnosticsTab = Window:CreateTab("Diagnostics", 4483362458)
+
+-- MOVEMENT
+MovementTab:CreateSection("Walk Speed")
+
+MovementTab:CreateToggle({
+    Name = "Enable Custom WalkSpeed",
+    CurrentValue = false,
+    Callback = function(value)
+        walkEnabled = value
+
+        local humanoid = GetHumanoid()
+        if not humanoid then
+            Notify("Movement", "Character not ready.")
+            return
+        end
+
+        if value then
+            humanoid.WalkSpeed = desiredWalkSpeed
+            Notify("Movement", "Custom WalkSpeed enabled.")
+        else
+            humanoid.WalkSpeed = originalWalkSpeed
+            Notify("Movement", "WalkSpeed restored.")
+        end
+    end
+})
+
+MovementTab:CreateSlider({
+    Name = "WalkSpeed",
+    Range = {8, 100},
+    Increment = 1,
+    CurrentValue = 16,
+    Callback = function(value)
+        desiredWalkSpeed = value
+
+        if walkEnabled then
+            local humanoid = GetHumanoid()
+            if humanoid then
+                humanoid.WalkSpeed = value
+            end
+        end
+    end
+})
+
+MovementTab:CreateSection("Jump Power")
+
+MovementTab:CreateToggle({
+    Name = "Enable Custom JumpPower",
+    CurrentValue = false,
+    Callback = function(value)
+        jumpEnabled = value
+
+        local humanoid = GetHumanoid()
+        if not humanoid then
+            Notify("Movement", "Character not ready.")
+            return
+        end
+
+        if value then
+            humanoid.UseJumpPower = true
+            humanoid.JumpPower = desiredJumpPower
+            Notify("Movement", "Custom JumpPower enabled.")
+        else
+            humanoid.UseJumpPower = originalUseJumpPower
+            humanoid.JumpPower = originalJumpPower
+            Notify("Movement", "Jump settings restored.")
+        end
+    end
+})
+
+MovementTab:CreateSlider({
+    Name = "Jump Power",
+    Range = {25, 150},
+    Increment = 5,
+    CurrentValue = 50,
+    Callback = function(value)
+        desiredJumpPower = value
+
+        if jumpEnabled then
+            local humanoid = GetHumanoid()
+            if humanoid then
+                humanoid.UseJumpPower = true
+                humanoid.JumpPower = value
+            end
+        end
+    end
+})
+
+MovementTab:CreateButton({
+    Name = "Reset Movement Settings",
+    Callback = function()
+        walkEnabled = false
+        jumpEnabled = false
+
+        local humanoid = GetHumanoid()
+        if humanoid then
+            humanoid.WalkSpeed = originalWalkSpeed
+            humanoid.UseJumpPower = originalUseJumpPower
+            humanoid.JumpPower = originalJumpPower
+        end
+
+        Notify("Movement", "Default movement settings restored.")
+    end
+})
+
+-- CAMERA
+CameraTab:CreateSection("Field of View")
+
+CameraTab:CreateSlider({
+    Name = "Camera FOV",
+    Range = {50, 110},
+    Increment = 1,
+    CurrentValue = 70,
+    Callback = function(value)
+        desiredFOV = value
+
+        local camera = Workspace.CurrentCamera
+        if camera then
+            camera.FieldOfView = value
+        end
+    end
+})
+
+CameraTab:CreateButton({
+    Name = "Reset Camera FOV",
+    Callback = function()
+        desiredFOV = 70
+
+        local camera = Workspace.CurrentCamera
+        if camera then
+            camera.FieldOfView = 70
+        end
+
+        Notify("Camera", "FOV reset to 70.")
+    end
+})
+
+-- WAYPOINTS
+WaypointTab:CreateSection("Local Waypoint")
+
+WaypointTab:CreateButton({
+    Name = "Save Current Location",
+    Callback = function()
+        local root = GetRoot()
+
+        if not root then
+            Notify("Waypoint", "Character root not found.")
+            return
+        end
+
+        savedWaypoint = root.CFrame
+        Notify("Waypoint", "Current location saved.")
+        print("[YUEN] Waypoint saved:", root.Position)
+    end
+})
+
+WaypointTab:CreateButton({
+    Name = "Return to Saved Location",
+    Callback = function()
+        local root = GetRoot()
+
+        if not root then
+            Notify("Waypoint", "Character root not found.")
+            return
+        end
+
+        if not savedWaypoint then
+            Notify("Waypoint", "Save a location first.")
+            return
+        end
+
+        root.CFrame = savedWaypoint
+        Notify("Waypoint", "Returned to saved location.")
+    end
+})
+
+WaypointTab:CreateButton({
+    Name = "Clear Saved Location",
+    Callback = function()
+        savedWaypoint = nil
+        Notify("Waypoint", "Saved location cleared.")
+    end
+})
+
+-- DIAGNOSTICS
+DiagnosticsTab:CreateSection("Character Information")
+
+DiagnosticsTab:CreateButton({
+    Name = "Inspect My Character",
+    Callback = function()
+        local character = GetCharacter()
+        local humanoid = GetHumanoid(character)
+        local root = GetRoot(character)
+
+        print("===== YUEN CHARACTER DIAGNOSTICS =====")
+        print("Player:", LocalPlayer.Name)
+        print("Character:", character and character:GetFullName() or "Missing")
+        print("Humanoid:", humanoid and "Found" or "Missing")
+        print("Root part:", root and root.Name or "Missing")
+
+        if humanoid then
+            print("Health:", humanoid.Health, "/", humanoid.MaxHealth)
+            print("WalkSpeed:", humanoid.WalkSpeed)
+            print("JumpPower:", humanoid.JumpPower)
+            print("UseJumpPower:", humanoid.UseJumpPower)
+        end
+
+        if root then
+            print("Position:", tostring(root.Position))
+        end
+
+        print("======================================")
+
+        Notify(
+            "Diagnostics",
+            "Character information printed to the console."
+        )
+    end
+})
+
+DiagnosticsTab:CreateSection("Game Information")
+
+DiagnosticsTab:CreateButton({
+    Name = "Inspect Game",
+    Callback = function()
+        print("===== YUEN GAME DIAGNOSTICS =====")
+        print("PlaceId:", game.PlaceId)
+        print("GameId:", game.GameId)
+        print("Players:", #Players:GetPlayers())
+        print("Camera:", Workspace.CurrentCamera and "Available" or "Missing")
+
+        for _, player in ipairs(Players:GetPlayers()) do
+            print(
+                "Player:",
+                player.Name,
+                "| DisplayName:",
+                player.DisplayName,
+                "| CharacterLoaded:",
+                player.Character ~= nil
+            )
+        end
+
+        print("=================================")
+
+        Notify(
+            "Diagnostics",
+            "Game information printed to the console."
+        )
+    end
+})
+
+DiagnosticsTab:CreateButton({
+    Name = "Check Character Status",
+    Callback = function()
+        local humanoid = GetHumanoid()
+        local root = GetRoot()
+
+        if humanoid and root then
+            Notify("Status", "Character and root part are available.")
+        else
+            Notify("Status", "Character is loading or incomplete.")
+        end
+    end
+})
+
+Notify("YUEN Utility Hub", "Interface loaded.")
+
+print("[YUEN] FPS Utility Hub v2.0 initialized.")
