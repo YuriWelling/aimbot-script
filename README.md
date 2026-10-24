@@ -1,0 +1,2 @@
+# aimbot-script
+wgjzdiornsdi hfa
